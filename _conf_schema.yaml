@@ -5,6 +5,13 @@ message_merger:
     $type: text
     $default: ""
     $placeholder: "例如: openai/gpt-3.5-turbo"
+    $required: false
+  judge_model_id:
+    $desc: "用于判断消息完整性的具体模型 ID"
+    $type: text
+    $default: ""
+    $placeholder: "例如: gpt-3.5-turbo, 留空则使用默认模型"
+    $required: false
   judge_prompt:
     $desc: "判断消息完整性的 Prompt（占位符: {text} 为待判断文本）"
     $type: textarea
@@ -19,13 +26,19 @@ message_merger:
 
       请只回复 "完整" 或 "不完整"。
   timeout_seconds:
-    $desc: "超时时间（秒），超时后自动合并发送"
+    $desc: "合并时间长度（秒），超时后自动合并发送"
     $type: int
     $default: 3
+    $min: 1
+    $max: 60
+    $required: true
   max_messages:
     $desc: "最多合并的消息条数"
     $type: int
     $default: 5
+    $min: 1
+    $max: 20
+    $required: true
   enabled:
     $desc: "是否启用插件"
     $type: bool

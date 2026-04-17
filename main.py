@@ -114,10 +114,12 @@ class MessageMerger(Star):
             prompt = judge_prompt_template.format(text=combined_text)
 
         provider_id = await self._get_judge_provider_id(event)
+        model_id = self.config.get("judge_model_id", "")
 
         try:
             llm_resp = await self.context.llm_generate(
                 chat_provider_id=provider_id,
+                model_id=model_id if model_id else None,
                 prompt=prompt,
             )
             result = llm_resp.completion_text.strip()
