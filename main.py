@@ -26,6 +26,9 @@ class MessageMerger(Star):
         advanced_settings = self.config.get("advanced_settings", {})
         enable_debug = advanced_settings.get("enable_debug_log", False)
         
+        if enable_debug:
+            logger.info(f"消息合并插件接收到消息: {event.message_str}")
+        
         if not self.config.get("enabled", True):
             if enable_debug:
                 logger.info("插件未启用，继续事件处理")
@@ -159,6 +162,13 @@ class MessageMerger(Star):
             self._cleanup(key)
 
     async def _check_completeness(self, event: AstrMessageEvent, combined_text: str, recent_history: List[str] = None) -> bool:
+        # 检查是否启用调试日志
+        advanced_settings = self.config.get("advanced_settings", {})
+        enable_debug = advanced_settings.get("enable_debug_log", False)
+        
+        if enable_debug:
+            logger.info(f"检查消息完整性: {combined_text}")
+        
         # 获取模型配置
         model_settings = self.config.get("model_settings", {})
         judge_prompt_template = model_settings.get("judge_prompt", "")
@@ -166,12 +176,19 @@ class MessageMerger(Star):
         if not judge_prompt_template:
             text = combined_text.strip()
             if not text:
+                if enable_debug:
+                    logger.info("消息为空，判断为完整")
                 return True
             incomplete_endings = ["然后", "还有", "而且", "并且", "但是", "然后呢", "然后呢？", "还有吗", "另外", "此外", "比如"]
             for ending in incomplete_endings:
                 if text.endswith(ending):
+                    if enable_debug:
+                        logger.info(f"消息以 '{ending}' 结尾，判断为不完整")
                     return False
-            return text.endswith(("。", "！", "？", ".", "!", "?", ":", ";"))
+            is_complete = text.endswith(("。", "！", "？", ".", "!", "?", ":", ";"))
+            if enable_debug:
+                logger.info(f"基于标点符号判断，消息{'完整' if is_complete else '不完整'}: {text}")
+            return is_complete
 
         if recent_history and len(recent_history) > 0:
             history_context = "\n最近对话历史:\n" + "\n".join([f"- {h}" for h in recent_history])
@@ -183,6 +200,9 @@ class MessageMerger(Star):
         model_id = model_settings.get("judge_model_id", "")
 
         try:
+            if enable_debug:
+                logger.info(f"调用模型判断消息完整性，提供商: {provider_id}, 模型: {model_id}")
+                
             llm_resp = await self.context.llm_generate(
                 chat_provider_id=provider_id,
                 model_id=model_id if model_id else None,
@@ -190,12 +210,14 @@ class MessageMerger(Star):
             )
             result = llm_resp.completion_text.strip()
             
-            # 检查是否启用调试日志
-            advanced_settings = self.config.get("advanced_settings", {})
-            if advanced_settings.get("enable_debug_log", False):
-                logger.info(f"判断结果: {result}")
+            if enable_debug:
+                logger.info(f"模型判断结果: {result}")
                 
-            return "完整" in result
+            is_complete = "完整" in result
+            if enable_debug:
+                logger.info(f"最终判断结果: {'完整' if is_complete else '不完整'}")
+                
+            return is_complete
         except Exception as e:
             logger.error(f"调用判断模型失败: {e}，默认放行")
             return True
