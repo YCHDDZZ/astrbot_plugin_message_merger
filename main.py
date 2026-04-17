@@ -1,13 +1,13 @@
 import asyncio
 from typing import Dict, List, Tuple
 
-from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event import EventFilter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
 
-@register("message_merger", "YCHDDZZ", "消息合并插件", "1.0.0")
+@register("message_merger", "YCHDDZZ", "消息合并器", "1.0.0")
 class MessageMerger(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -16,7 +16,7 @@ class MessageMerger(Star):
         self.merged_flags: Dict[Tuple[str, str], bool] = {}
         self.conversation_history: Dict[Tuple[str, str], List[str]] = {}  # 存储对话历史
 
-    @filter.on_message(priority=5)
+    @EventFilter.on_message(priority=5)
     async def on_message(self, event: AstrMessageEvent):
         if not self.config.get("enabled", True):
             await event.continue_event()
