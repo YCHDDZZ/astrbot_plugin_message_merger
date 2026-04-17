@@ -1,0 +1,82 @@
+{
+  "enabled": {
+    "description": "是否启用插件",
+    "type": "bool",
+    "default": true,
+    "order": 1
+  },
+  "model_settings": {
+    "description": "模型配置",
+    "type": "object",
+    "order": 2,
+    "items": {
+      "judge_provider_id": {
+        "description": "用于判断消息完整性的模型提供商 ID",
+        "type": "string",
+        "default": "",
+        "hint": "例如: openai",
+        "order": 1
+      },
+      "judge_model_id": {
+        "description": "用于判断消息完整性的具体模型 ID",
+        "type": "string",
+        "default": "",
+        "hint": "例如: gpt-3.5-turbo",
+        "order": 2
+      },
+      "judge_prompt": {
+        "description": "判断消息完整性的 Prompt（占位符: {text} 为待判断文本）",
+        "type": "text",
+        "default": "你是一个句子完整性判断助手。请判断用户是否说完了一句完整的话。\n\n注意：\n1. 如果用户的话明显只说了一半（以\"然后\"、\"还有\"、\"而且\"、\"比如\"结尾，或明显是断句），则是不完整。\n2. 如果用户的话表达了完整的意思，无论是否有标点，都是完整的。\n\n用户的话：{text}\n\n请只回复 \"完整\" 或 \"不完整\"。",
+        "order": 3
+      }
+    }
+  },
+  "merge_settings": {
+    "description": "合并配置",
+    "type": "object",
+    "order": 3,
+    "items": {
+      "timeout_seconds": {
+        "description": "合并时间长度（秒），超时后自动合并发送",
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "order": 1
+      },
+      "max_messages": {
+        "description": "最多合并的消息条数",
+        "type": "int",
+        "default": 5,
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "order": 2
+      }
+    }
+  },
+  "advanced_settings": {
+    "description": "高级配置",
+    "type": "object",
+    "order": 4,
+    "items": {
+      "enable_debug_log": {
+        "description": "启用调试日志",
+        "type": "bool",
+        "default": false,
+        "order": 1
+      },
+      "auto_cleanup_interval": {
+        "description": "自动清理间隔（分钟）",
+        "type": "int",
+        "default": 30,
+        "min": 5,
+        "max": 240,
+        "step": 5,
+        "order": 2
+      }
+    }
+  }
+}

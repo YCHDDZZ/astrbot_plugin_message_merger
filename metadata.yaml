@@ -1,6 +1,6 @@
 name: astrbot_plugin_message_merger
-display_name: 消息合并器
-desc: 使用已经配置好的轻量模型判断短期连续消息是否需要合并，从而提升对话体验感。
+display_name: 连续对话优化器
+desc: 使用已经自定义轻量模型判断短期连续消息是否需要合并，从而提升对话体验感。
 author: YCHDDZZ
 version: 1.0.0
 repo: https://github.com/YCHDDZZ/astrbot_plugin_message_merger
