@@ -19,7 +19,10 @@ class MessageMerger(Star):
         # 初始化配置
         self.config = getattr(context, '_config', {})
         self._start_auto_cleanup()
-
+        
+        # 添加对 follow-up 消息的支持
+        self.follow_up_processing = True
+        
     # 直接重写 on_message 方法，无需装饰器
     async def on_message(self, event: AstrMessageEvent):
         # 检查是否启用调试日志
@@ -28,6 +31,11 @@ class MessageMerger(Star):
         
         if enable_debug:
             logger.info(f"消息合并插件接收到消息: {event.message_str}")
+            # 检查消息来源，看是否能识别 follow-up 消息
+            if hasattr(event, 'message_obj') and hasattr(event.message_obj, 'extra'):
+                extra_info = getattr(event.message_obj, 'extra', {})
+                if extra_info:
+                    logger.info(f"消息额外信息: {extra_info}")
         
         if not self.config.get("enabled", True):
             if enable_debug:
@@ -96,6 +104,12 @@ class MessageMerger(Star):
 
         # 关键：总是阻止事件传播，直到我们决定是否合并消息
         event.stop_event()
+        
+    def _should_intercept_message(self, event: AstrMessageEvent) -> bool:
+        """
+        判断是否应该拦截当前消息
+        """
+        return self.config.get("enabled", True)
 
     async def _timeout_handler(self, event: AstrMessageEvent, key: Tuple[str, str], timeout: int):
         await asyncio.sleep(timeout)
