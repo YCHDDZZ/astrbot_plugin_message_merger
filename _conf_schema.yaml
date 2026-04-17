@@ -1,0 +1,32 @@
+message_merger:
+  $desc: "消息合并插件配置"
+  judge_provider_id:
+    $desc: "用于判断消息完整性的模型提供商 ID"
+    $type: text
+    $default: ""
+    $placeholder: "例如: openai/gpt-3.5-turbo"
+  judge_prompt:
+    $desc: "判断消息完整性的 Prompt（占位符: {text} 为待判断文本）"
+    $type: textarea
+    $default: |
+      你是一个句子完整性判断助手。请判断用户是否说完了一句完整的话。
+
+      注意：
+      1. 如果用户的话明显只说了一半（以"然后"、"还有"、"而且"、"比如"结尾，或明显是断句），则是不完整。
+      2. 如果用户的话表达了完整的意思，无论是否有标点，都是完整的。
+
+      用户的话：{text}
+
+      请只回复 "完整" 或 "不完整"。
+  timeout_seconds:
+    $desc: "超时时间（秒），超时后自动合并发送"
+    $type: int
+    $default: 3
+  max_messages:
+    $desc: "最多合并的消息条数"
+    $type: int
+    $default: 5
+  enabled:
+    $desc: "是否启用插件"
+    $type: bool
+    $default: true
