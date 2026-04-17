@@ -76,6 +76,34 @@
         "max": 240,
         "step": 5,
         "order": 2
+      },
+      "advanced_settings": {
+        "description": "高级配置",
+        "type": "object",
+        "order": 4,
+        "items": {
+          "enable_debug_log": {
+            "description": "启用调试日志",
+            "type": "bool",
+            "default": false,
+            "order": 1
+          },
+          "auto_cleanup_interval": {
+            "description": "自动清理间隔（分钟）",
+            "type": "int",
+            "default": 30,
+            "min": 5,
+            "max": 240,
+            "step": 5,
+            "order": 2
+          },
+          "enable_follow_up_interception": {
+            "description": "拦截并合并 follow-up 消息（实验性）",
+            "type": "bool",
+            "default": true,
+            "order": 3
+          }
+        }
       }
     }
   }
