@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context, Star, register
@@ -15,6 +15,8 @@ class MessageMerger(Star):
         self.timers: Dict[Tuple[str, str], asyncio.Task] = {}
         self.merged_flags: Dict[Tuple[str, str], bool] = {}
         self.conversation_history: Dict[Tuple[str, str], List[str]] = {}
+        self.cleanup_task: Optional[asyncio.Task] = None
+        self._start_auto_cleanup()
 
     # 直接重写 on_message 方法，无需装饰器
     async def on_message(self, event: AstrMessageEvent):
@@ -44,14 +46,18 @@ class MessageMerger(Star):
             self.message_cache[key] = []
         self.message_cache[key].append(message_text)
 
-        max_messages = self.config.get("max_messages", 5)
+        # 获取合并配置
+        merge_settings = self.config.get("merge_settings", {})
+        max_messages = merge_settings.get("max_messages", 5)
+        
         if len(self.message_cache[key]) >= max_messages:
             await self._handle_merge(event, key)
             return
 
         if key in self.timers:
             self.timers[key].cancel()
-        timeout = self.config.get("timeout_seconds", 3)
+        
+        timeout = merge_settings.get("timeout_seconds", 3)
         self.timers[key] = asyncio.create_task(self._timeout_handler(event, key, timeout))
 
         event.stop_event()
@@ -96,7 +102,10 @@ class MessageMerger(Star):
             self._cleanup(key)
 
     async def _check_completeness(self, event: AstrMessageEvent, combined_text: str, recent_history: List[str] = None) -> bool:
-        judge_prompt_template = self.config.get("judge_prompt", "")
+        # 获取模型配置
+        model_settings = self.config.get("model_settings", {})
+        judge_prompt_template = model_settings.get("judge_prompt", "")
+        
         if not judge_prompt_template:
             text = combined_text.strip()
             if not text:
@@ -114,7 +123,7 @@ class MessageMerger(Star):
             prompt = judge_prompt_template.format(text=combined_text)
 
         provider_id = await self._get_judge_provider_id(event)
-        model_id = self.config.get("judge_model_id", "")
+        model_id = model_settings.get("judge_model_id", "")
 
         try:
             llm_resp = await self.context.llm_generate(
@@ -123,14 +132,20 @@ class MessageMerger(Star):
                 prompt=prompt,
             )
             result = llm_resp.completion_text.strip()
-            logger.info(f"判断结果: {result}")
+            
+            # 检查是否启用调试日志
+            advanced_settings = self.config.get("advanced_settings", {})
+            if advanced_settings.get("enable_debug_log", False):
+                logger.info(f"判断结果: {result}")
+                
             return "完整" in result
         except Exception as e:
             logger.error(f"调用判断模型失败: {e}，默认放行")
             return True
 
     async def _get_judge_provider_id(self, event: AstrMessageEvent) -> str:
-        config_id = self.config.get("judge_provider_id", "")
+        model_settings = self.config.get("model_settings", {})
+        config_id = model_settings.get("judge_provider_id", "")
         if config_id:
             return config_id
         try:
@@ -139,6 +154,57 @@ class MessageMerger(Star):
         except Exception as e:
             logger.error(f"获取当前聊天提供商ID失败: {e}，返回空字符串")
             return ""
+
+    def _start_auto_cleanup(self):
+        """启动自动清理任务"""
+        async def cleanup_loop():
+            while True:
+                try:
+                    # 获取清理间隔配置
+                    advanced_settings = self.config.get("advanced_settings", {})
+                    interval_minutes = advanced_settings.get("auto_cleanup_interval", 30)
+                    
+                    # 转换为秒
+                    interval_seconds = interval_minutes * 60
+                    
+                    # 等待清理间隔
+                    await asyncio.sleep(interval_seconds)
+                    
+                    # 执行清理
+                    self._perform_cleanup()
+                    
+                    # 记录清理日志（如果启用调试日志）
+                    if advanced_settings.get("enable_debug_log", False):
+                        logger.info(f"自动清理完成，下次清理将在 {interval_minutes} 分钟后执行")
+                        
+                except Exception as e:
+                    logger.error(f"自动清理任务出错: {e}")
+                    await asyncio.sleep(60)  # 出错后等待1分钟再重试
+        
+        self.cleanup_task = asyncio.create_task(cleanup_loop())
+
+    def _perform_cleanup(self):
+        """执行清理操作"""
+        # 清理过期的计时器
+        current_time = asyncio.get_event_loop().time()
+        keys_to_remove = []
+        
+        for key, timer in self.timers.items():
+            if timer.done():
+                keys_to_remove.append(key)
+        
+        for key in keys_to_remove:
+            if key in self.timers:
+                del self.timers[key]
+            if key in self.message_cache:
+                del self.message_cache[key]
+            if key in self.merged_flags:
+                del self.merged_flags[key]
+        
+        # 清理长时间未使用的对话历史（超过1小时）
+        # 这里可以添加更复杂的清理逻辑，但目前先简单清理
+        if keys_to_remove:
+            logger.debug(f"清理了 {len(keys_to_remove)} 个过期会话")
 
     def _cleanup(self, key: Tuple[str, str]):
         if key in self.timers:
@@ -150,6 +216,15 @@ class MessageMerger(Star):
             del self.merged_flags[key]
 
     async def terminate(self):
+        # 停止自动清理任务
+        if self.cleanup_task and not self.cleanup_task.done():
+            self.cleanup_task.cancel()
+            try:
+                await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+        
+        # 清理所有计时器
         for key, timer in self.timers.items():
             timer.cancel()
         self.timers.clear()
