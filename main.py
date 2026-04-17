@@ -17,7 +17,7 @@ class MessageMerger(Star):
         self.conversation_history: Dict[Tuple[str, str], List[str]] = {}
         self.cleanup_task: Optional[asyncio.Task] = None
         # 初始化配置
-        self.config = context.config
+        self.config = getattr(context, '_config', {})
         self._start_auto_cleanup()
 
     # 直接重写 on_message 方法，无需装饰器
