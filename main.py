@@ -22,7 +22,13 @@ class MessageMerger(Star):
 
     # 直接重写 on_message 方法，无需装饰器
     async def on_message(self, event: AstrMessageEvent):
+        # 检查是否启用调试日志
+        advanced_settings = self.config.get("advanced_settings", {})
+        enable_debug = advanced_settings.get("enable_debug_log", False)
+        
         if not self.config.get("enabled", True):
+            if enable_debug:
+                logger.info("插件未启用，继续事件处理")
             await event.continue_event()
             return
 
@@ -32,6 +38,8 @@ class MessageMerger(Star):
         message_text = event.message_str
 
         if not message_text:
+            if enable_debug:
+                logger.info(f"收到空消息，继续事件处理")
             if key in self.timers:
                 self.timers[key].cancel()
                 del self.timers[key]
@@ -39,8 +47,12 @@ class MessageMerger(Star):
             return
 
         if self.merged_flags.get(key, False):
+            # 清除合并标记，准备接收新消息
             if key in self.merged_flags:
                 del self.merged_flags[key]
+            if enable_debug:
+                logger.info(f"处理合并后消息，继续事件处理")
+            # 由于这是合并后的消息处理完毕，我们需要继续事件处理
             await event.continue_event()
             return
 
@@ -48,26 +60,18 @@ class MessageMerger(Star):
             self.message_cache[key] = []
         self.message_cache[key].append(message_text)
 
+        if enable_debug:
+            logger.info(f"缓存消息: '{message_text}', 当前缓存大小: {len(self.message_cache[key])}, key: {key}")
+
         # 获取合并配置
         merge_settings = self.config.get("merge_settings", {})
         max_messages = merge_settings.get("max_messages", 5)
         
         if len(self.message_cache[key]) >= max_messages:
-            await self._handle_merge(event, key)
-            return
-
-        if key in self.timers:
-            self.timers[key].cancel()
-        
-        timeout = merge_settings.get("timeout_seconds", 3)
-        self.timers[key] = asyncio.create_task(self._timeout_handler(event, key, timeout))
-
-        event.stop_event()
-
-    async def _timeout_handler(self, event: AstrMessageEvent, key: Tuple[str, str], timeout: int):
-        await asyncio.sleep(timeout)
-        if key in self.message_cache and self.message_cache[key]:
+            # 达到最大消息数限制，强制合并
             combined_text = "\n".join(self.message_cache[key])
+            if enable_debug:
+                logger.info(f"达到最大消息数限制，强制合并: {combined_text}")
             if key not in self.conversation_history:
                 self.conversation_history[key] = []
             self.conversation_history[key].append(combined_text)
@@ -77,9 +81,60 @@ class MessageMerger(Star):
             event.message_obj.message = [Plain(combined_text)]
             self._cleanup(key)
             await event.continue_event()
-            logger.info(f"会话 {key} 超时，强制合并并放行")
+            return
+
+        if key in self.timers:
+            self.timers[key].cancel()
+        
+        timeout = merge_settings.get("timeout_seconds", 3)
+        if enable_debug:
+            logger.info(f"启动 {timeout} 秒超时计时器，key: {key}")
+        self.timers[key] = asyncio.create_task(self._timeout_handler(event, key, timeout))
+
+        # 关键：总是阻止事件传播，直到我们决定是否合并消息
+        event.stop_event()
+
+    async def _timeout_handler(self, event: AstrMessageEvent, key: Tuple[str, str], timeout: int):
+        await asyncio.sleep(timeout)
+        # 检查是否启用调试日志
+        advanced_settings = self.config.get("advanced_settings", {})
+        enable_debug = advanced_settings.get("enable_debug_log", False)
+        
+        if enable_debug:
+            logger.info(f"会话 {key} 超时 ({timeout}秒)，开始处理...")
+            
+        if key in self.message_cache and self.message_cache[key]:
+            combined_text = "\n".join(self.message_cache[key])
+            # 即使超时，也要先检查完整性，除非达到最大消息数限制
+            recent_history = self.conversation_history.get(key, [])[-3:]
+            is_complete = await self._check_completeness(event, combined_text, recent_history)
+            
+            if is_complete or len(self.message_cache[key]) >= self.config.get("merge_settings", {}).get("max_messages", 5):
+                # 消息完整或已达到最大消息数，发送合并的消息
+                if key not in self.conversation_history:
+                    self.conversation_history[key] = []
+                self.conversation_history[key].append(combined_text)
+
+                self.merged_flags[key] = True
+                event.message_str = combined_text
+                event.message_obj.message = [Plain(combined_text)]
+                self._cleanup(key)
+                if enable_debug:
+                    logger.info(f"会话 {key} 超时，合并并放行完整消息: {combined_text}")
+                await event.continue_event()
+            else:
+                # 消息不完整，继续等待
+                if enable_debug:
+                    logger.info(f"会话 {key} 消息不完整，继续等待: {combined_text}")
+                merge_settings = self.config.get("merge_settings", {})
+                timeout = merge_settings.get("timeout_seconds", 3)
+                if key in self.timers:
+                    self.timers[key].cancel()
+                self.timers[key] = asyncio.create_task(self._timeout_handler(event, key, timeout))
         elif key in self.message_cache:
             self._cleanup(key)
+            if enable_debug:
+                logger.info(f"会话 {key} 清理空缓存")
 
     async def _handle_merge(self, event: AstrMessageEvent, key: Tuple[str, str]):
         if key not in self.message_cache or not self.message_cache[key]:
