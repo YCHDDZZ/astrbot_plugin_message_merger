@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, List, Tuple
 
-from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
@@ -14,9 +14,9 @@ class MessageMerger(Star):
         self.message_cache: Dict[Tuple[str, str], List[str]] = {}
         self.timers: Dict[Tuple[str, str], asyncio.Task] = {}
         self.merged_flags: Dict[Tuple[str, str], bool] = {}
-        self.conversation_history: Dict[Tuple[str, str], List[str]] = {}  # 存储对话历史
+        self.conversation_history: Dict[Tuple[str, str], List[str]] = {}
 
-    @filter.on_message()
+    # 直接重写 on_message 方法，无需装饰器
     async def on_message(self, event: AstrMessageEvent):
         if not self.config.get("enabled", True):
             await event.continue_event()
@@ -28,7 +28,6 @@ class MessageMerger(Star):
         message_text = event.message_str
 
         if not message_text:
-            # 清理空消息相关的缓存和计时器
             if key in self.timers:
                 self.timers[key].cancel()
                 del self.timers[key]
@@ -36,7 +35,6 @@ class MessageMerger(Star):
             return
 
         if self.merged_flags.get(key, False):
-            # 清理已合并标记，准备接收下一轮消息
             if key in self.merged_flags:
                 del self.merged_flags[key]
             await event.continue_event()
@@ -62,18 +60,17 @@ class MessageMerger(Star):
         await asyncio.sleep(timeout)
         if key in self.message_cache and self.message_cache[key]:
             combined_text = "\n".join(self.message_cache[key])
-            # 更新对话历史
             if key not in self.conversation_history:
                 self.conversation_history[key] = []
             self.conversation_history[key].append(combined_text)
-            
+
             self.merged_flags[key] = True
             event.message_str = combined_text
             event.message_obj.message = [Plain(combined_text)]
             self._cleanup(key)
             await event.continue_event()
             logger.info(f"会话 {key} 超时，强制合并并放行")
-        elif key in self.message_cache:  # 即使缓存为空也要清理
+        elif key in self.message_cache:
             self._cleanup(key)
 
     async def _handle_merge(self, event: AstrMessageEvent, key: Tuple[str, str]):
@@ -81,16 +78,14 @@ class MessageMerger(Star):
             return
 
         combined_text = "\n".join(self.message_cache[key])
-        # 获取最近的对话历史用于上下文判断
-        recent_history = self.conversation_history.get(key, [])[-3:]  # 取最近3次对话
+        recent_history = self.conversation_history.get(key, [])[-3:]
         is_complete = await self._check_completeness(event, combined_text, recent_history)
 
         if is_complete:
-            # 更新对话历史
             if key not in self.conversation_history:
                 self.conversation_history[key] = []
             self.conversation_history[key].append(combined_text)
-            
+
             self.merged_flags[key] = True
             event.message_str = combined_text
             event.message_obj.message = [Plain(combined_text)]
@@ -98,31 +93,26 @@ class MessageMerger(Star):
             await event.continue_event()
         else:
             logger.info(f"会话 {key} 消息不完整，继续等待")
-            # 清理缓存以避免无限积压消息
             self._cleanup(key)
 
     async def _check_completeness(self, event: AstrMessageEvent, combined_text: str, recent_history: List[str] = None) -> bool:
         judge_prompt_template = self.config.get("judge_prompt", "")
         if not judge_prompt_template:
-            # 更全面的完整性检查，不仅看标点符号
             text = combined_text.strip()
             if not text:
-                return True  # 空消息认为是完整的
-            # 检查是否以表示未完成的词语结尾
+                return True
             incomplete_endings = ["然后", "还有", "而且", "并且", "但是", "然后呢", "然后呢？", "还有吗", "另外", "此外", "比如"]
             for ending in incomplete_endings:
                 if text.endswith(ending):
                     return False
-            # 检查是否以标点符号结尾
             return text.endswith(("。", "！", "？", ".", "!", "?", ":", ";"))
 
-        # 如果有对话历史，构建包含上下文的提示词
         if recent_history and len(recent_history) > 0:
             history_context = "\n最近对话历史:\n" + "\n".join([f"- {h}" for h in recent_history])
             prompt = judge_prompt_template.format(text=combined_text) + history_context
         else:
             prompt = judge_prompt_template.format(text=combined_text)
-        
+
         provider_id = await self._get_judge_provider_id(event)
 
         try:
@@ -146,7 +136,7 @@ class MessageMerger(Star):
             return await self.context.get_current_chat_provider_id(umo=umo)
         except Exception as e:
             logger.error(f"获取当前聊天提供商ID失败: {e}，返回空字符串")
-            return ""  # 返回空字符串，让后续逻辑处理
+            return ""
 
     def _cleanup(self, key: Tuple[str, str]):
         if key in self.timers:
@@ -156,14 +146,12 @@ class MessageMerger(Star):
             del self.message_cache[key]
         if key in self.merged_flags:
             del self.merged_flags[key]
-        # 注意：保留对话历史，不在此处清理，因为对话历史用于上下文判断
 
     async def terminate(self):
-        """插件卸载时清理所有定时器"""
         for key, timer in self.timers.items():
             timer.cancel()
         self.timers.clear()
         self.message_cache.clear()
         self.merged_flags.clear()
-        self.conversation_history.clear()  # 清理对话历史
+        self.conversation_history.clear()
         logger.info("消息合并插件已卸载，资源已清理")
