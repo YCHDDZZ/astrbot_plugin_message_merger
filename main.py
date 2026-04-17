@@ -1,8 +1,7 @@
 import asyncio
 from typing import Dict, List, Tuple
 
-from astrbot.api.event import AstrMessageEvent
-from astrbot.api.event import filter
+from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
@@ -17,7 +16,7 @@ class MessageMerger(Star):
         self.merged_flags: Dict[Tuple[str, str], bool] = {}
         self.conversation_history: Dict[Tuple[str, str], List[str]] = {}  # 存储对话历史
 
-    @filter
+    @filter.on_message()
     async def on_message(self, event: AstrMessageEvent):
         if not self.config.get("enabled", True):
             await event.continue_event()
